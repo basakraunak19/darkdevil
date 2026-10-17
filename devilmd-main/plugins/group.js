@@ -177,15 +177,22 @@ async function sendGroupStatus(message, storyData) {
     },
   };
 
-  const generated = generateWAMessageFromContent(jid, envelope, {
-    userJid: sock?.user?.id,
-  });
-
-  await sock.relayMessage(
-    jid,
-    generated.message,
-    { messageId: generated.key?.id || generateMessageID() }
-  );
+  const messageId = generateMessageID();
+  try {
+    const generated = generateWAMessageFromContent(jid, envelope, {
+      userJid: sock?.user?.id,
+    });
+    await sock.relayMessage(
+      jid,
+      generated.message,
+      { messageId: generated.key?.id || messageId }
+    );
+  } catch (firstError) {
+    // Some Baileys RC builds reject the generated wrapper but accept the
+    // native envelope directly. Keep this fallback for text and media status.
+    console.warn("[gstatus] generated relay failed; retrying native envelope:", firstError?.message || firstError);
+    await sock.relayMessage(jid, envelope, { messageId });
+  }
 }
 
 // ── gstatus command ───────────────────────────────────────────────────────────
@@ -204,7 +211,7 @@ Module({
 
     // Message wrappers may report "image"/"video" instead of Baileys
     // node names such as "imageMessage". Normalize both forms.
-    const quotedRaw = quoted?.raw?.message || quoted?.message || {};
+    const quotedRaw = quoted?.raw?.message || quoted?.message || quoted?.msg || {};
     const rawMedia = ["imageMessage", "videoMessage", "audioMessage", "stickerMessage"]
       .find((type) => quotedRaw?.[type]);
     const rawType = quoted?.type || quoted?.mtype || quoted?.msgType || "";
@@ -225,9 +232,10 @@ Module({
       }
 
       let storyData;
-      if (qType === "imageMessage") storyData = { image: buffer, caption: caption || quoted.caption || "" };
-      else if (qType === "videoMessage") storyData = { video: buffer, caption: caption || quoted.caption || "" };
-      else if (qType === "audioMessage") storyData = { audio: buffer, mimetype: quoted.mimetype || "audio/ogg; codecs=opus", ptt: !!quoted.ptt };
+      const quotedCaption = quoted.caption || quoted.body || quoted.msg?.caption || "";
+      if (qType === "imageMessage") storyData = { image: buffer, caption: caption || quotedCaption };
+      else if (qType === "videoMessage") storyData = { video: buffer, caption: caption || quotedCaption };
+      else if (qType === "audioMessage") storyData = { audio: buffer, mimetype: quoted.mimetype || quoted.msg?.mimetype || "audio/ogg; codecs=opus", ptt: !!(quoted.ptt || quoted.msg?.ptt) };
       else storyData = { sticker: buffer };
 
       await sendGroupStatus(message, storyData);
