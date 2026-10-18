@@ -6,6 +6,13 @@ import {
   generateMessageID,
 } from "@whiskeysockets/baileys";
 import crypto from "crypto";
+import fs from "fs/promises";
+import os from "os";
+import path from "path";
+import ffmpeg from "fluent-ffmpeg";
+import { resolveFfmpegPath } from "../lib/resolveFfmpeg.js";
+
+try { ffmpeg.setFfmpegPath(resolveFfmpegPath()); } catch {}
 const theme = getTheme();
 
 // ==================== HELPER FUNCTIONS ====================
@@ -126,6 +133,36 @@ function randomArgbColor() {
   return colors[Math.floor(Math.random() * colors.length)];
 }
 
+// Normalize common video formats to WhatsApp-friendly MP4/H.264 automatically.
+async function normalizeStatusVideo(buffer) {
+  const id = `gstatus-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const input = path.join(os.tmpdir(), `${id}.input`);
+  const output = path.join(os.tmpdir(), `${id}.mp4`);
+  await fs.writeFile(input, buffer);
+  try {
+    await new Promise((resolve, reject) => {
+      ffmpeg(input)
+        .videoCodec("libx264")
+        .audioCodec("aac")
+        .outputOptions([
+          "-movflags +faststart",
+          "-pix_fmt yuv420p",
+          "-vf scale=trunc(iw/2)*2:trunc(ih/2)*2",
+          "-b:v 2500k",
+          "-maxrate 3000k",
+          "-bufsize 6000k",
+        ])
+        .format("mp4")
+        .on("end", resolve)
+        .on("error", reject)
+        .save(output);
+    });
+    return await fs.readFile(output);
+  } finally {
+    await Promise.allSettled([fs.unlink(input), fs.unlink(output)]);
+  }
+}
+
 // ── sendGroupStatus helper ───────────────────────────────────────────────────
 // Use the native Group Status V2 envelope.  Important: do NOT fall back to
 // sendMessage({ groupStatusMessage }) here, because older Baileys builds can
@@ -242,10 +279,17 @@ Module({
           mimetype: quoted.mimetype || quotedMeta.mimetype || "image/jpeg",
         };
       } else if (qType === "videoMessage") {
+        let normalizedVideo;
+        try {
+          normalizedVideo = await normalizeStatusVideo(buffer);
+        } catch (conversionError) {
+          console.warn("[gstatus] video normalization failed; using original video:", conversionError?.message || conversionError);
+          normalizedVideo = buffer;
+        }
         storyData = {
-          video: buffer,
+          video: normalizedVideo,
           caption: caption || quotedCaption,
-          mimetype: quoted.mimetype || quotedMeta.mimetype || "video/mp4",
+          mimetype: "video/mp4",
           seconds: Number(quoted.seconds || quotedMeta.seconds || 0) || undefined,
         };
       }
