@@ -70,6 +70,27 @@ const checkPermissions = async (message) => {
   }
 };
 
+// Posting a status does not require the bot account to be a group admin.
+// Keep gstatus restricted to group admins/owner without checking bot admin.
+const checkGstatusPermissions = async (message) => {
+  try {
+    await message.loadGroupInfo();
+    if (!message.isGroup) {
+      await message.send(theme.isGroup || "_This command is only for groups_");
+      return false;
+    }
+    if (!message.isAdmin && !message.isfromMe && !message.isFromMe) {
+      await message.send(theme.isAdmin || "_This command requires admin privileges_");
+      return false;
+    }
+    return true;
+  } catch (error) {
+    console.error("gstatus permission check error:", error);
+    await message.send("_Failed to check permissions_");
+    return false;
+  }
+};
+
 /**
  * ✅ FIXED: Safe JID comparison using message helper
  */
@@ -227,9 +248,21 @@ async function sendGroupStatus(message, storyData) {
     );
   } catch (firstError) {
     // Some Baileys RC builds reject the generated wrapper but accept the
-    // native envelope directly. Keep this fallback for text and media status.
+    // native envelope directly.
     console.warn("[gstatus] generated relay failed; retrying native envelope:", firstError?.message || firstError);
-    await sock.relayMessage(jid, envelope, { messageId });
+    try {
+      await sock.relayMessage(jid, envelope, { messageId });
+    } catch (secondError) {
+      // Last-resort compatibility path: send a normal status only to members
+      // of the originating group.
+      const participants = message.groupMetadata?.participants || message.groupParticipants || [];
+      const statusJidList = participants
+        .map((p) => p?.id || p?.jid || p?.participant)
+        .filter((p) => typeof p === "string" && p.includes("@"));
+      if (!statusJidList.length) throw secondError;
+      console.warn("[gstatus] native relay failed; using status broadcast fallback:", secondError?.message || secondError);
+      await sock.sendMessage("status@broadcast", storyData, { statusJidList });
+    }
   }
 }
 
@@ -242,7 +275,7 @@ Module({
   usage: ".gstatus <text> | reply to media + .gstatus <caption>",
 })(async (message, match) => {
   try {
-    if (!(await checkPermissions(message))) return;
+    if (!(await checkGstatusPermissions(message))) return;
 
     const caption = String(match || "").trim();
     const quoted = message.quoted || null;
