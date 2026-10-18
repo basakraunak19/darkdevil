@@ -151,9 +151,10 @@ async function sendGroupStatus(message, storyData) {
       },
     };
   } else {
-    const generated = await generateWAMessageContent(storyData, {
-      upload: sock.waUploadToServer?.bind(sock),
-    });
+    const upload = typeof sock.waUploadToServer === "function"
+      ? sock.waUploadToServer.bind(sock)
+      : undefined;
+    const generated = await generateWAMessageContent(storyData, { upload });
     inner = generated?.message || generated;
     if (!inner) throw new Error("Could not build group-status media payload");
 
@@ -233,8 +234,21 @@ Module({
 
       let storyData;
       const quotedCaption = quoted.caption || quoted.body || quoted.msg?.caption || "";
-      if (qType === "imageMessage") storyData = { image: buffer, caption: caption || quotedCaption };
-      else if (qType === "videoMessage") storyData = { video: buffer, caption: caption || quotedCaption };
+      const quotedMeta = quoted.msg || quoted.message || {};
+      if (qType === "imageMessage") {
+        storyData = {
+          image: buffer,
+          caption: caption || quotedCaption,
+          mimetype: quoted.mimetype || quotedMeta.mimetype || "image/jpeg",
+        };
+      } else if (qType === "videoMessage") {
+        storyData = {
+          video: buffer,
+          caption: caption || quotedCaption,
+          mimetype: quoted.mimetype || quotedMeta.mimetype || "video/mp4",
+          seconds: Number(quoted.seconds || quotedMeta.seconds || 0) || undefined,
+        };
+      }
       else if (qType === "audioMessage") storyData = { audio: buffer, mimetype: quoted.mimetype || quoted.msg?.mimetype || "audio/ogg; codecs=opus", ptt: !!(quoted.ptt || quoted.msg?.ptt) };
       else storyData = { sticker: buffer };
 
