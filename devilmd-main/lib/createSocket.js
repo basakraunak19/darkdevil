@@ -55,7 +55,9 @@ export async function createSocket(sessionId, opts = {}) {
       creds: state.creds,
       keys: makeCacheableSignalKeyStore(state.keys, silentLogger),
     },
-    browser: Browsers.macOS("Safari"),
+    // Phone-number pairing is more reliable with a current Chrome desktop
+    // identity than the older Safari identity.
+    browser: Browsers.ubuntu("Chrome"),
     connectTimeoutMs: 60_000,
     defaultQueryTimeoutMs: 60_000,
     keepAliveIntervalMs: 30_000,
