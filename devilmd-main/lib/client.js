@@ -488,7 +488,17 @@ function S7() {
         }
       }
 
-      // ── Text plugin dispatch ─────────────────────────────────────────────────
+      // ── Message plugin dispatch ──────────────────────────────────────────────
+      // Message plugins handle non-text events such as stickers, media, and
+      // group-status messages. They must run independently of command parsing.
+      for (const plugin of plugins.message) {
+        try   { await plugin.exec(msg); }
+        catch (err) {
+          logger.error({ sessionId }, `[client] Message plugin error: ${err?.message}`);
+        }
+      }
+
+      // ── Text plugin dispatch ──────────────────────────────────────────────────
       // Text plugins run directly (NOT through the queue) to prevent queue buildup.
       // Each plugin is responsible for returning early if the message isn't relevant.
       if (body && !isStatus) {
