@@ -94,11 +94,27 @@ async function getAudio(youtubeUrl) {
 
 async function resolveYouTube(input) {
   const direct = ytUrl(input);
-  if (direct) return { url: direct, title: "song" };
+  if (direct) {
+    const match = direct.match(/(?:[?&]v=|youtu\.be\/|youtube\.com\/shorts\/)([A-Za-z0-9_-]{11})/i);
+    const info = match ? await yts({ videoId: match[1] }) : null;
+    const video = info?.videos?.[0];
+    return { url: direct, title: video?.title || "song", author: video?.author?.name || "YouTube", thumbnail: video?.thumbnail || "" };
+  }
   const found = await yts(input);
   const v = found?.videos?.[0];
   if (!v?.url) throw new Error("No YouTube result found");
-  return { url: v.url, title: v.title || "song" };
+  return { url: v.url, title: v.title || "song", author: v.author?.name || "YouTube", thumbnail: v.thumbnail || "" };
+}
+
+async function downloadThumbnail(url) {
+  if (!url) return null;
+  try {
+    const res = await axios.get(url, { responseType: "arraybuffer", timeout: 15_000 });
+    return Buffer.from(res.data);
+  } catch (error) {
+    console.warn("[song] thumbnail unavailable:", error?.message || error);
+    return null;
+  }
 }
 
 for (const command of ["song", "play", "yta", "ytmp3"]) {
@@ -111,16 +127,31 @@ for (const command of ["song", "play", "yta", "ytmp3"]) {
       const target = await resolveYouTube(input);
       const result = await getAudio(target.url);
       const safe = String(result.title || target.title || "song").replace(/[\\/:*?"<>|]/g, "_").slice(0, 90) || "song";
+      const title = String(result.title || target.title || "song").slice(0, 100);
+      const author = String(target.author || "YouTube").slice(0, 80);
+      const thumbnail = await downloadThumbnail(target.thumbnail);
       const tmp = path.join(os.tmpdir(), `xmd_audio_${Date.now()}.mp3`);
       fs.writeFileSync(tmp, result.buffer);
       try {
-        // ONLY audio is sent. No thumbnail, buttons, text, or video.
-        await message.conn.sendMessage(message.from, {
+        const audioMessage = {
           audio: fs.readFileSync(tmp),
           mimetype: "audio/mpeg",
           ptt: false,
           fileName: `${safe}.mp3`,
-        }, { quoted: message.raw });
+          contextInfo: {
+            externalAdReply: {
+              title,
+              body: author,
+              mediaType: 2,
+              thumbnail: thumbnail || undefined,
+              sourceUrl: target.url,
+              mediaUrl: target.url,
+              renderLargerThumbnail: true,
+              showAdAttribution: false,
+            },
+          },
+        };
+        await message.conn.sendMessage(message.from, audioMessage, { quoted: message.raw });
       } finally { fs.promises.unlink(tmp).catch(() => {}); }
       await message.react("🎵").catch(() => {});
     } catch (e) {
