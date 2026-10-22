@@ -360,8 +360,9 @@ Module({
 
 Module({
   command: "antisticker",
+  aliases: ["autosticker", "stickerdelete"],
   package: "group",
-  description: "Block stickers in group. .antisticker on/off/kick/warn/delete",
+  description: "Automatically delete stickers. .autosticker on/off/status",
 })(async (message, match) => {
   if (!(await checkAdmin(message))) return;
   if (!message.isGroup) return message.send("❌ _Groups only_");
@@ -373,14 +374,14 @@ Module({
   const enabledKey = gKey("antisticker:enabled", message.from);
   const modeKey = gKey("antisticker:mode", message.from);
 
-  if (!input) {
+  if (!input || input === "status") {
     const on = dbGet(botNum, enabledKey, false) === true;
     const mode = dbGet(botNum, modeKey, "delete");
     return message.send(
       `🎭 *AntiSticker*\n> Status: ${on ? "✅ ON" : "❌ OFF"}\n> Mode: ${String(
         mode
       ).toUpperCase()}\n\n` +
-        `Use:\n• .antisticker on\n• .antisticker off\n• .antisticker kick\n• .antisticker warn\n• .antisticker delete`
+        `Use:\n• .autosticker on\n• .autosticker off\n• .autosticker status\n• .antisticker warn/kick`
     );
   }
   if (input === "on") {
