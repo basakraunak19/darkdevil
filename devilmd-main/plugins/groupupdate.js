@@ -40,6 +40,19 @@ function getGroupConfigKey(groupJid, kind) {
   return `group:${groupJid}:${kind}`;
 }
 
+async function requireGroupAdmin(message) {
+  await message.loadGroupInfo?.();
+  if (!message.isGroup || !message.from?.includes("@g.us")) {
+    await message.send?.("❌ Use this command inside a group.");
+    return false;
+  }
+  if (!message.isAdmin && !message.isGroupAdmin && !message.isFromMe && !message.isfromMe) {
+    await message.send?.("❌ Only group admins can change welcome settings.");
+    return false;
+  }
+  return true;
+}
+
 function renderTemplate(template, data) {
   return buildText(template, data).text;
 }
@@ -116,6 +129,7 @@ Module({
   description:
     "Turn per-group welcome ON or OFF (must be used inside the group).",
 })(async (message, match) => {
+  if (!(await requireGroupAdmin(message))) return;
   // require group context
   const groupJid =
     message.from ||
@@ -138,13 +152,18 @@ Module({
     const key = `group:${groupJid}:welcome`;
     const cfg = await db.getAsync(botNumber, key, null);
     const status = cfg && typeof cfg === "object" ? toBool(cfg.status) : false;
-    return await message.sendreply?.(
+    return await message.send?.(
       `Welcome is ${status ? "✅ ON" : "❌ OFF"} for this group.`
     );
   }
 
+  if (raw === "status") {
+    const botNumber = String(message.conn?.user?.id || "bot").split(":")[0];
+    const cfg = await db.getAsync(botNumber, `group:${groupJid}:welcome`, null);
+    return message.send(`Welcome is ${cfg?.status ? "✅ ON" : "❌ OFF"} for this group.`);
+  }
   if (raw !== "on" && raw !== "off") {
-    return await message.send?.("❌ Invalid option. Use `on` or `off`.");
+    return await message.send?.("❌ Invalid option. Use `on`, `off`, or `status`.");
   }
 
   const botNumber =
@@ -167,6 +186,7 @@ Module({
   description:
     "Turn per-group goodbye ON or OFF (must be used inside the group).",
 })(async (message, match) => {
+  if (!(await requireGroupAdmin(message))) return;
   const groupJid =
     message.from ||
     message.chat ||
@@ -186,13 +206,18 @@ Module({
     const key = `group:${groupJid}:goodbye`;
     const cfg = await db.getAsync(botNumber, key, null);
     const status = cfg && typeof cfg === "object" ? toBool(cfg.status) : false;
-    return await message.sendreply?.(
+    return await message.send?.(
       `Goodbye is ${status ? "✅ ON" : "❌ OFF"} for this group.`
     );
   }
 
+  if (raw === "status") {
+    const botNumber = String(message.conn?.user?.id || "bot").split(":")[0];
+    const cfg = await db.getAsync(botNumber, `group:${groupJid}:goodbye`, null);
+    return message.send(`Goodbye is ${cfg?.status ? "✅ ON" : "❌ OFF"} for this group.`);
+  }
   if (raw !== "on" && raw !== "off") {
-    return await message.send?.("❌ Invalid option. Use `on` or `off`.");
+    return await message.send?.("❌ Invalid option. Use `on`, `off`, or `status`.");
   }
 
   const botNumber =
